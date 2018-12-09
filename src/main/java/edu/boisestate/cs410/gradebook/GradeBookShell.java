@@ -11,7 +11,7 @@ import java.util.ArrayList;
 public class GradeBookShell {
 
     private final Connection db;
-    private String activeClass = null;
+    private int activeClass = 0;
 
     public GradeBookShell(Connection cxn) {
         db = cxn;
@@ -43,8 +43,7 @@ public class GradeBookShell {
                 if (!rs.next()) {
                     throw new RuntimeException("insert did not insert rows");
                 }
-                int id = rs.getInt("class_id");
-                System.out.format("Added class %s with id %d%n", course, id);
+                System.out.format("Added class %s%n", course);
             }
         }
     }
@@ -65,8 +64,13 @@ public class GradeBookShell {
             if(count==1) {
                 try (PreparedStatement classStmt= db.prepareStatement(classQuery)) {
                     classStmt.setString(1,course);
-                    activeClass = classStmt.toString();
-                    System.out.println("Selected "+course);
+                    try(ResultSet rs = classStmt.executeQuery()){
+                        while(rs.next()){
+                            activeClass = rs.getInt("class_id");
+                            int section = rs.getInt("class_section");
+                            System.out.println("Selected "+course+" Section "+section);
+                        }
+                    }
                 }
             }
             else{
@@ -95,8 +99,13 @@ public class GradeBookShell {
                     classStmt.setString(1,course);
                     classStmt.setString(2,term);
                     classStmt.setInt(3,year);
-                    activeClass = classStmt.toString();
-                    System.out.println("Selected "+course);
+                    try(ResultSet rs = classStmt.executeQuery()){
+                        while(rs.next()){
+                            activeClass = rs.getInt("class_id");
+                            int section = rs.getInt("class_section");
+                            System.out.println("Selected "+course+" Section "+section);
+                        }
+                    }
                 }
             }
             else{
@@ -127,8 +136,12 @@ public class GradeBookShell {
                     classStmt.setString(2,term);
                     classStmt.setInt(3,year);
                     classStmt.setString(4,section);
-                    activeClass = classStmt.toString();
-                    System.out.println("Selected "+course);
+                    try(ResultSet rs = classStmt.executeQuery()){
+                        while(rs.next()){
+                            activeClass = rs.getInt("class_id");
+                            System.out.println("Selected "+course+" Section "+section);
+                        }
+                    }
                 }
             }
             else{
@@ -139,10 +152,12 @@ public class GradeBookShell {
 
     @Command(name="show-class")
     public void showClass() throws SQLException {
-        if (activeClass == null)
+        String classQuery = "SELECT * FROM Class WHERE class_id = ?";
+        if (activeClass == 0)
             System.out.println("No class selected");
         else {
-            try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
+            try (PreparedStatement stmt = db.prepareStatement(classQuery)) {
+                stmt.setInt(1,activeClass);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         String course = rs.getString("course_number");
@@ -160,21 +175,13 @@ public class GradeBookShell {
 
     @Command(name="add-category")
     public void addCategory(String name, double weight) throws SQLException{
-        int classID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String query =
                 "INSERT INTO Category(category_name, category_weight, class_id) VALUES (?,?,?)" +
                         "RETURNING category_id";
         try (PreparedStatement stmt = db.prepareStatement(query)) {
             stmt.setString(1, name);
             stmt.setDouble(2, weight);
-            stmt.setInt(3, classID);
+            stmt.setInt(3, activeClass);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (!rs.next()) {
                     throw new RuntimeException("Add category failed");
@@ -186,17 +193,9 @@ public class GradeBookShell {
 
     @Command(name="show-categories")
     public void showCategories() throws SQLException{
-        int classID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String query = "SELECT category_name,category_weight FROM Category WHERE class_id = ?";
         try(PreparedStatement stmt = db.prepareStatement(query)){
-            stmt.setInt(1,classID);
+            stmt.setInt(1,activeClass);
             try (ResultSet rs = stmt.executeQuery()){
                 while(rs.next()){
                     String name= rs.getString("category_name");
@@ -209,18 +208,10 @@ public class GradeBookShell {
 
     @Command(name="add-item")
     public void addItem(String name,String category,String description, int points)throws SQLException {
-        int classID = 0;
         int categoryID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String categoryQuery = "SELECT category_id FROM Category WHERE class_id = ? AND category_name = ?";
         try (PreparedStatement stmt2 = db.prepareStatement(categoryQuery)) {
-            stmt2.setInt(1, classID);
+            stmt2.setInt(1, activeClass);
             stmt2.setString(2, category);
             try (ResultSet rs = stmt2.executeQuery()) {
                 while (rs.next()) {
@@ -249,21 +240,13 @@ public class GradeBookShell {
 
     @Command(name = "show-items")
     public void showItems()throws SQLException{
-        int classID = 0;
         int categoryID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String itemQuery = "SELECT item_name, item_pointValue FROM Item JOIN Category USING (category_id) " +
         "WHERE class_id=? group by category_id,item_name,item_pointValue";
         try (PreparedStatement stmt2 = db.prepareStatement(itemQuery)) {
-            stmt2.setInt(1, classID);
+            stmt2.setInt(1, activeClass);
             try (ResultSet rs = stmt2.executeQuery()) {
-                System.out.println("Assignment Grades");
+                System.out.println("Assignment Value");
                 while (rs.next()) {
                     String name= rs.getString("item_name");
                     int points = rs.getInt("item_pointvalue");
@@ -275,20 +258,12 @@ public class GradeBookShell {
 
     @Command(name = "add-student")
     public void addStudent(String username, int studentid, String name)throws SQLException{
-        int classID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String query = "INSERT INTO Student (student_id, student_name, student_username, class_id) VALUES (?,?,?,?) RETURNING student_id";
         try(PreparedStatement stmt = db.prepareStatement(query)){
             stmt.setInt(1,studentid);
             stmt.setString(2,name);
             stmt.setString(3,username);
-            stmt.setInt(4,classID);
+            stmt.setInt(4,activeClass);
             try(ResultSet rs = stmt.executeQuery()){
                 if(!rs.next()){
                     System.out.println("Add item failed");
@@ -303,17 +278,9 @@ public class GradeBookShell {
 
     @Command(name = "show-students")
     public void showStudent() throws SQLException{
-        int classID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
    String query = "SELECT student_id,student_name,student_username FROM Student WHERE class_id = ?";
         try(PreparedStatement stmt = db.prepareStatement(query)){
-            stmt.setInt(1,classID);
+            stmt.setInt(1,activeClass);
             try(ResultSet rs = stmt.executeQuery()){
                 System.out.println("ID Name Username");
                 while(rs.next()){
@@ -328,20 +295,12 @@ public class GradeBookShell {
 
     @Command(name="show-students")
     public void showStudent(String s) throws SQLException{
-        int classID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String query = "SELECT student_id,student_name,student_username FROM Student " +
                 "WHERE class_id = ? " +
                 "AND (student_name ILIKE ('%' || ? || '%') " +
                 "OR student_username ILIKE ('%' || ? || '%'))";
         try(PreparedStatement stmt = db.prepareStatement(query)){
-            stmt.setInt(1,classID);
+            stmt.setInt(1,activeClass);
             stmt.setString(2,s);
             stmt.setString(3,s);
             try(ResultSet rs = stmt.executeQuery()){
@@ -358,16 +317,8 @@ public class GradeBookShell {
 
     @Command(name = "grade")
     public void grade(String assignment, String username, double grade) throws SQLException {
-        int classID = 0;
         int studentID = 0;
         int itemID = 0;
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
         String queryStudent = "SELECT student_id FROM Student WHERE student_username = ?";
         try(PreparedStatement stmt = db.prepareStatement(queryStudent)){
             stmt.setString(1,username);
@@ -380,7 +331,7 @@ public class GradeBookShell {
         String queryItem = "SELECT item_id FROM Item JOIN Category USING (category_id) " +
                             "WHERE class_id = ? AND item_name = ?";
         try(PreparedStatement stmt = db.prepareStatement(queryItem)){
-            stmt.setInt(1,classID);
+            stmt.setInt(1,activeClass);
             stmt.setString(2,assignment);
             try(ResultSet rs = stmt.executeQuery()){
                 while(rs.next()){
@@ -403,21 +354,13 @@ public class GradeBookShell {
 
     @Command(name = "student-grades")
     public void studentGrades(String username) throws SQLException {
-        int classID = 0;
     int studentID = 0;
     double totalGrade = 0;
     double weightTotal = 0;
     ArrayList<String> categories = new ArrayList<String>();
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-        try (ResultSet rs = stmt.executeQuery()) {
-            while (rs.next()) {
-                classID = rs.getInt("Class_id");
-            }
-        }
-    }
     String categoryQuery = "SELECT category_name FROM Category WHERE class_id = ?";
         try (PreparedStatement stmt = db.prepareStatement(categoryQuery)) {
-        stmt.setInt(1,classID);
+        stmt.setInt(1,activeClass);
         try (ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
                 categories.add(rs.getString("category_name"));
@@ -453,7 +396,7 @@ public class GradeBookShell {
         while(categories.size()>0) {
         try (PreparedStatement stmt = db.prepareStatement(gradeQuery)) {
             stmt.setInt(1, studentID);
-            stmt.setInt(2, classID);
+            stmt.setInt(2, activeClass);
             stmt.setString(3, categories.get(categories.size()-1));
             try (ResultSet rs = stmt.executeQuery()) {
                 System.out.println(categories.get(categories.size()-1)+" Category");
@@ -468,7 +411,7 @@ public class GradeBookShell {
         }
         try(PreparedStatement stmt = db.prepareStatement(sumQuery)){
             stmt.setInt(1, studentID);
-            stmt.setInt(2, classID);
+            stmt.setInt(2, activeClass);
             stmt.setString(3, categories.get(categories.size()-1));
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -489,22 +432,11 @@ public class GradeBookShell {
 
     @Command(name = "gradebook")
     public void gradebook() throws SQLException{
-        int classID = 0;
-
-
         ArrayList<Integer> students = new ArrayList<Integer>();
         ArrayList<String> categories = new ArrayList<String>();
-        try (PreparedStatement stmt = db.prepareStatement(activeClass)) {
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    classID = rs.getInt("Class_id");
-                }
-            }
-        }
-
         String studentQuery = "SELECT student_id FROM Student WHERE class_id= ?";
         try (PreparedStatement stmt = db.prepareStatement(studentQuery)) {
-            stmt.setInt(1,classID);
+            stmt.setInt(1,activeClass);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     students.add(rs.getInt("student_id"));
@@ -521,7 +453,7 @@ public class GradeBookShell {
             studentID = students.get(students.size()-1);
             String categoryQuery = "SELECT category_name FROM Category WHERE class_id = ?";
             try (PreparedStatement stmt = db.prepareStatement(categoryQuery)) {
-                stmt.setInt(1,classID);
+                stmt.setInt(1,activeClass);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         categories.add(rs.getString("category_name"));
@@ -530,7 +462,7 @@ public class GradeBookShell {
             }
             String nameQuery = "SELECT student_username, student_name FROM Student WHERE class_id = ? AND student_id = ?";
             try(PreparedStatement stmt = db.prepareStatement(nameQuery)){
-                stmt.setInt(1,classID);
+                stmt.setInt(1,activeClass);
                 stmt.setInt(2,studentID);
                 try(ResultSet rs = stmt.executeQuery()){
                     while(rs.next()){
@@ -551,7 +483,7 @@ public class GradeBookShell {
             while (categories.size() > 0) {
                 try (PreparedStatement stmt = db.prepareStatement(sumQuery)) {
                     stmt.setInt(1, studentID);
-                    stmt.setInt(2, classID);
+                    stmt.setInt(2, activeClass);
                     stmt.setString(3, categories.get(categories.size() - 1));
                     try (ResultSet rs = stmt.executeQuery()) {
                         while (rs.next()) {
